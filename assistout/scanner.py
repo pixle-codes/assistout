@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from .knowledge import ANY_FILE, RULES, PYTHON_TARGETS
+from .knowledge import RULES, rules_for
 
 SKIP_DIRS = {
     ".git",
@@ -99,9 +99,7 @@ def scan_path(root: str):
         if len(data) > MAX_BYTES or is_binary(data):
             continue
         ext = os.path.splitext(path)[1].lower()
-        rules = RULES
-        if ext not in PYTHON_TARGETS:
-            rules = [r for r in RULES if r.target == ANY_FILE]
+        rules = rules_for(ext)
         try:
             text = data.decode("utf-8", errors="replace")
         except UnicodeDecodeError:
