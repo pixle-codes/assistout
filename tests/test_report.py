@@ -144,5 +144,49 @@ class RenderHumanHintTests(unittest.TestCase):
         self.assertEqual(out.count("- old"), 2)
 
 
+class PromptsDeadlineTests(unittest.TestCase):
+    """v0.5.0: prompt-object findings surface their own Nov-30 countdown."""
+
+    def mk_deadline(self, deadline):
+        f = mk()
+        return f.__class__(
+            path=f.path,
+            line=f.line,
+            col=f.col,
+            category="prompt_param",
+            effort=f.effort,
+            match=f.match,
+            replacement=f.replacement,
+            note=f.note,
+            hint_before=f.hint_before,
+            hint_after=f.hint_after,
+            deadline=deadline,
+        )
+
+    def test_prompts_line_shown_only_when_prompt_findings_present(self):
+        out = render_human([self.mk_deadline("2026-11-30")], 1)
+        self.assertIn("prompt objects (v1/prompts) shuts down 2026-11-30", out)
+        plain = render_human([mk()], 1)
+        self.assertNotIn("prompt objects", plain)
+
+    def test_migration_map_no_longer_sends_people_to_dashboard_prompts(self):
+        out = render_human([mk(category="runs")], 1)
+        self.assertIn("assistants->inline model/instructions/tools", out)
+        self.assertNotIn("dashboard prompts", out)
+
+    def test_prompt_map_appended_for_prompt_findings(self):
+        out = render_human([self.mk_deadline("2026-11-30")], 1)
+        self.assertIn("Prompt objects map:", out)
+
+    def test_json_reports_prompts_shutdown_date(self):
+        payload = render_json(
+            "root",
+            [self.mk_deadline("2026-11-30")],
+            1,
+            today=date(2026, 8, 23),
+        )
+        self.assertEqual(payload["prompts_shutdown_date"], "2026-11-30")
+
+
 if __name__ == "__main__":
     unittest.main()

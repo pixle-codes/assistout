@@ -10,6 +10,12 @@ SHUTDOWN_DATE = date(2026, 8, 26)
 # retires separately, months after the Aug-26 Assistants cutoff.
 AGENTS_CLASSIC_DATE = date(2027, 3, 31)
 
+# OpenAI reusable Prompt Objects (dashboard Prompts, v1/prompts): creation
+# de-emphasized 2026-06-03, endpoint shutdown 2026-11-30. Announced while the
+# Assistants migration guide was still pointing people AT prompt objects -
+# migrating into them means paying for a second migration 96 days later.
+PROMPTS_DATE = date(2026, 11, 30)
+
 PYTHON_TARGETS = {".py"}
 JS_TARGETS = {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}
 PY = "py"
@@ -123,8 +129,8 @@ RULES = [
             "run = client.beta.threads.runs.create(thread_id=tid, assistant_id=aid)"
         ),
         hint_after=(
-            'res = client.responses.create(conversation=cid, prompt={"id": pid}, '
-            "input=items)"
+            "res = client.responses.create(conversation=cid, input=items) "
+            "# bundle inlined as model/instructions/tools args"
         ),
         targets=(PY, JS),
     ),
@@ -165,19 +171,19 @@ RULES = [
         category="assistant_objects",
         effort="manual",
         pattern=r"\.beta\.assistants\s*\.",
-        replacement="dashboard Prompts: prompt={'id': ...}",
+        replacement="inline model+instructions+tools at each responses.create",
         note=(
-            "Recreate each assistant bundle (model+instructions+tools) as a "
-            "named Prompt in the dashboard and pass prompt={'id': ...} to "
-            "responses.create. Caution: reusable prompts carry their own "
-            "deprecation timeline - prefer versioned prompt objects."
+            "Recreate each assistant bundle (model+instructions+tools) as "
+            "plain arguments on responses.create. Do NOT migrate into "
+            "reusable prompt objects (dashboard Prompts) - they are being "
+            "retired too; v1/prompts shuts down 2026-11-30."
         ),
         hint_before=(
             'a = client.beta.assistants.create(model="gpt-4o", instructions=inst)'
         ),
         hint_after=(
-            'client.responses.create(prompt={"id": "pmpt_..."}, input=items)'
-            "  # bundle recreated once in the dashboard"
+            "client.responses.create(model='gpt-4o', instructions=inst, "
+            "tools=tools, input=items)  # bundle lives in your code now"
         ),
         targets=(PY, JS),
     ),
@@ -204,17 +210,19 @@ RULES = [
         category="assistant_id_arg",
         effort="moderate",
         pattern=r"\bassistant_?[iI]d\b\s*[:=]",
-        replacement="prompt={'id': ...} on responses.create",
+        replacement="inline the assistant bundle on responses.create",
         note=(
-            "Call site passes an assistant id; recreate the assistant bundle "
-            "as a dashboard Prompt and pass prompt={'id': ...} instead."
+            "Call site passes an assistant id; inline that assistant's "
+            "model/instructions/tools as responses.create arguments. Do NOT "
+            "swap it for a dashboard Prompt id - prompt objects die "
+            "2026-11-30 too."
         ),
         hint_before=(
             'client.beta.threads.runs.create(thread_id=tid, assistant_id="asst_x")'
         ),
         hint_after=(
-            'client.responses.create(conversation=cid, prompt={"id": "pmpt_x"}, '
-            "input=items)"
+            "client.responses.create(conversation=cid, model='gpt-4o', "
+            "instructions=inst, input=items)"
         ),
         targets=(PY, JS),
     ),
@@ -222,11 +230,15 @@ RULES = [
         category="assistant_refs",
         effort="moderate",
         pattern=r"\basst_[A-Za-z0-9]{8,}\b",
-        replacement="dashboard prompt id via prompt={'id': ...}",
-        note="Hardcoded assistant id; swap for a dashboard prompt id after recreating the bundle.",
+        replacement="inline the bundle (model/instructions/tools) in code",
+        note=(
+            "Hardcoded assistant id; inline what that assistant configured "
+            "at each call site instead of recreating it as a dashboard "
+            "Prompt (prompt objects shut down 2026-11-30)."
+        ),
         hint_before='ASSISTANT_ID = "asst_abc12345"',
         hint_after=(
-            'PROMPT_ID = "pmpt_abc12345"  # after recreating the bundle as a Prompt'
+            "MODEL = 'gpt-4o'; INSTRUCTIONS = '...'  # copied from the assistant"
         ),
         targets=(ANY_FILE,),
     ),
@@ -234,13 +246,101 @@ RULES = [
         category="assistant_refs",
         effort="moderate",
         pattern=r"\bOPENAI_ASSISTANT_ID\b",
-        replacement="dashboard prompt id via prompt={'id': ...}",
+        replacement="inline the bundle; drop the indirection",
         note=(
-            "Config references an assistant id; replace with a prompt id once "
-            "the assistant is recreated as a Prompt."
+            "Config references an assistant id; after inlining the "
+            "assistant's settings into code this env var can go away. Do not "
+            "replace it with a prompt id - v1/prompts shuts down 2026-11-30."
         ),
         hint_before='assistant_id = os.environ["OPENAI_ASSISTANT_ID"]',
-        hint_after='prompt_id = os.environ["OPENAI_PROMPT_ID"]',
+        hint_after="# no id needed: pass model/instructions directly to responses.create",
+        targets=(ANY_FILE,),
+    ),
+    # --- Reusable Prompt Objects (dashboard Prompts / v1/prompts).
+    # Creation de-emphasized 2026-06-03; endpoint shutdown 2026-11-30. These
+    # sit AFTER the assistant_* rules above but their guidance is the
+    # opposite: get OUT of prompt objects by inlining, not into them.
+    Rule(
+        category="prompt_object_refs",
+        effort="mechanical",
+        pattern=r"\bpmpt_[A-Za-z0-9]{3,}\b",
+        deadline=PROMPTS_DATE,
+        replacement="inline the prompt text as input=[{...}] messages",
+        note=(
+            "Hardcoded prompt-object id (v1/prompts shuts down 2026-11-30). "
+            "Per the official guide, copy the saved prompt's text into your "
+            "code and pass it via input on responses.create."
+        ),
+        hint_before='PROMPT_ID = "pmpt_abc12345"',
+        hint_after=(
+            "SYSTEM_PROMPT = 'You are ...'  # copied from the prompt object"
+        ),
+        targets=(ANY_FILE,),
+    ),
+    Rule(
+        category="prompt_object_refs",
+        effort="mechanical",
+        pattern=r"\bOPENAI_PROMPT_ID\b|\bprompt_?[iI]d\b\s*[:=]|\"prompt_?[iI]d\"\s*:",
+        deadline=PROMPTS_DATE,
+        replacement="drop the indirection; store the prompt text in code",
+        note=(
+            "Reference to a prompt object id (v1/prompts shuts down "
+            "2026-11-30). Move the stored prompt's content into a prompts/ "
+            "module or builder function and delete the id indirection."
+        ),
+        hint_before='prompt_id = os.environ["OPENAI_PROMPT_ID"]',
+        hint_after="# from prompts.support import build_support_prompt; input=build_support_prompt(...)",
+        targets=(ANY_FILE,),
+    ),
+    Rule(
+        category="prompt_sdk_calls",
+        effort="manual",
+        pattern=r"\.\s*prompts\s*\.\s*(?:create|retrieve|update|delete|list|get|archive)\b",
+        deadline=PROMPTS_DATE,
+        replacement="prompts live in your repo now (files + code review)",
+        note=(
+            "Prompt-object management calls stop working when v1/prompts "
+            "shuts down 2026-11-30. Keep prompt text in version control and "
+            "pass it inline to responses.create."
+        ),
+        hint_before='p = client.prompts.retrieve("pmpt_123")',
+        hint_after="from myapp.prompts import support_prompt  # plain Python constant",
+        targets=(PY, JS),
+    ),
+    Rule(
+        category="prompt_param",
+        effort="moderate",
+        pattern=r"(?:\bprompt\s*=\s*\{|\"prompt\"\s*:\s*\{|\bprompt:\s*\{)",
+        deadline=PROMPTS_DATE,
+        replacement="input=[{role, content}] with the text inline",
+        note=(
+            "responses.create(prompt={{...}}) references a managed prompt "
+            "object; v1/prompts shuts down 2026-11-30. Inline its messages "
+            "as input and turn variables into function arguments."
+        ),
+        hint_before=(
+            'client.responses.create(prompt={"prompt_id": pid, '
+            '"variables": vars})'
+        ),
+        hint_after=(
+            "client.responses.create(input=build_support_prompt(customer, "
+            "issue))"
+        ),
+        targets=(PY, JS),
+    ),
+    Rule(
+        category="http_endpoints",
+        effort="mechanical",
+        pattern=r"/v1/prompts\b",
+        deadline=PROMPTS_DATE,
+        replacement="no API replacement - move prompt content into code",
+        note=(
+            "Raw REST calls to /v1/prompts stop working 2026-11-30 with no "
+            "successor endpoint; the official path is inlining prompt text "
+            "in application code."
+        ),
+        hint_before="GET https://api.openai.com/v1/prompts/pmpt_123",
+        hint_after="# read the prompt from your repo instead of the API",
         targets=(ANY_FILE,),
     ),
     Rule(

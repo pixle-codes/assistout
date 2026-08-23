@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 
 from . import __version__
-from .knowledge import AGENTS_CLASSIC_DATE, SHUTDOWN_DATE
+from .knowledge import AGENTS_CLASSIC_DATE, PROMPTS_DATE, SHUTDOWN_DATE
 
 
 def days_left(today=None) -> int:
@@ -43,6 +43,10 @@ def classic_agents_line(today=None) -> str:
     return deadline_line(
         "Foundry Agent Service (classic)", AGENTS_CLASSIC_DATE, today
     )
+
+
+def prompts_line(today=None) -> str:
+    return deadline_line("OpenAI prompt objects (v1/prompts)", PROMPTS_DATE, today)
 
 
 def totals(findings):
@@ -86,6 +90,7 @@ def render_json(root, findings, files_scanned, today=None):
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "shutdown_date": SHUTDOWN_DATE.isoformat(),
         "agents_classic_retirement": AGENTS_CLASSIC_DATE.isoformat(),
+        "prompts_shutdown_date": PROMPTS_DATE.isoformat(),
         "days_left": days_left(today),
         "scanned_root": root,
         "files_scanned": files_scanned,
@@ -103,6 +108,8 @@ def render_human(findings, files_scanned, today=None):
     ]
     if any(f.deadline == AGENTS_CLASSIC_DATE.isoformat() for f in findings):
         lines.append(classic_agents_line(today))
+    if any(f.deadline == PROMPTS_DATE.isoformat() for f in findings):
+        lines.append(prompts_line(today))
     lines.append("")
     if not findings:
         lines.append(
@@ -137,8 +144,13 @@ def render_human(findings, files_scanned, today=None):
     lines.append("")
     lines.append(
         "Migration map: threads->conversations, runs->responses.create, "
-        "assistants->dashboard prompts, run steps->output items."
+        "assistants->inline model/instructions/tools, run steps->output items."
     )
+    if any(f.deadline == PROMPTS_DATE.isoformat() for f in findings):
+        lines.append(
+            "Prompt objects map: pmpt_ ids / prompt={...} -> inline the "
+            "prompt text as input messages (v1/prompts has no successor)."
+        )
     if any(f.deadline == AGENTS_CLASSIC_DATE.isoformat() for f in findings):
         lines.append(
             "Foundry classic map: create_agent->create_version("

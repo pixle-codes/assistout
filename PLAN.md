@@ -87,6 +87,23 @@ this migration.
       per-finding `deadline` + top-level `agents_classic_retirement`; SARIF
       rule descriptions deadline-aware (old wording byte-identical for
       assistants rules). 90 tests green.
+- [x] M4.5 DONE s16 (v0.5.0 tagged, pushed): THIRD WAVE — reusable prompt
+      objects (dashboard Prompts, `v1/prompts`) shut down **2026-11-30**
+      (announced 2026-06-03; verified against
+      developers.openai.com/api/docs/guides/prompting/migrate-from-prompt-object).
+      Trap angle: Assistants migrators following older guides were pointed AT
+      prompt objects → second forced migration. New rules: `prompt_object_refs`
+      (pmpt_ ids + OPENAI_PROMPT_ID/prompt_id refs, any file),
+      `prompt_sdk_calls` (.prompts.create|retrieve|... py+js), `prompt_param`
+      (prompt={ / "prompt": { / prompt: { containers, py+js+json) and a
+      second `http_endpoints` rule for `/v1/prompts` — all carry the Nov-30
+      deadline, human report shows a third countdown line + "Prompt objects
+      map" footer when they fire, JSON gains prompts_shutdown_date.
+      CRITICAL GUIDANCE FLIP: assistant_objects/assistant_id_arg/assistant_refs
+      no longer recommend dashboard Prompts ("don't pay for two migrations") —
+      pinned by test that no assistant* rule mentions pmpt_ or prompt={'id'.
+      Saturation check: zero repos cover prompt-object deprecation (gh search).
+      103 tests green.
 - [ ] M5 (ONLY on demand): PyPI packaging if stars/issues appear.
 
 ## Gotchas / decisions

@@ -24,6 +24,16 @@ dies the same day (2026-08-26), while code on the **Foundry Agent Service
 retiring **2027-03-31**) gets its own findings, deadline line, and migration
 map to `create_version(PromptAgentDefinition)` + conversations/responses.
 
+And as of v0.5.0, the **third wave**: reusable **prompt objects** (dashboard
+Prompts, served by `v1/prompts`) shut down on **2026-11-30**
+([deprecations page](https://developers.openai.com/api/docs/deprecations#2026-06-03-reusable-prompts)).
+This is a trap for Assistants migrators — earlier migration guides pointed
+people at dashboard Prompts as the replacement, so teams that followed them
+now face a *second* forced migration 96 days later. assistout flags `pmpt_…`
+ids, `prompt={...}` parameters, `.prompts.*` SDK calls, `/v1/prompts` REST
+calls — and its Assistants guidance now steers you to inline prompts in code
+(the official post-prompt-object path), never into another managed store.
+
 ## What it detects
 
 | Category | Example | Replacement | Effort |
@@ -33,12 +43,19 @@ map to `create_version(PromptAgentDefinition)` + conversations/responses.
 | `runs` | `client.beta.threads.runs.create/retrieve/poll(...)` | `responses.create(conversation=..., input=[...])`; polling loops deleted | manual |
 | `run_steps` | `client.beta.threads.runs.steps.list(...)` | iterate `response.output[]` items | manual |
 | `streaming` | `.runs.stream(...)`, `AssistantEventHandler` | Responses streaming events / `background=True` | manual |
-| `assistant_objects` | `client.beta.assistants.create(...)` | dashboard Prompts, `prompt={"id": ...}` | manual |
+| `assistant_objects` | `client.beta.assistants.create(...)` | inline model+instructions+tools at each `responses.create` — **not** dashboard Prompts (they die 2026-11-30 too) | manual |
 | `vector_stores` | `client.beta.vector_stores.files.upload(...)` | survives — re-attach via `tools=[{"type": "file_search", ...}]` | moderate |
-| `assistant_refs` | `"asst_8fVY..."`, `OPENAI_ASSISTANT_ID` | swap for prompt id after recreating bundle | moderate |
+| `assistant_refs` | `"asst_8fVY..."`, `OPENAI_ASSISTANT_ID` | inline the bundle in code; drop the id indirection | moderate |
 | `js_run_helpers` | `.runs.createAndPoll(...)`, `.runs.createAndStream(...)` | awaited `responses.create` / Responses stream events | manual |
-| `assistant_id_arg` | `assistant_id="asst_..."` at any call site | `prompt={"id": ...}` on `responses.create` | moderate |
+| `assistant_id_arg` | `assistant_id="asst_..."` at any call site | inline the assistant's model/instructions/tools on `responses.create` | moderate |
 | `http_endpoints` | `fetch("https://api.openai.com/v1/threads/...")` | `/v1/conversations` + `/v1/responses` | manual |
+| `prompt_object_refs` ⏰ | `"pmpt_abc123"`, `OPENAI_PROMPT_ID`, `prompt_id:` | move the stored prompt's text into code (`input=[...]`) — dead **2026-11-30** | mechanical |
+| `prompt_sdk_calls` ⏰ | `client.prompts.retrieve/create/list/delete(...)` | keep prompts in your repo, pass text inline | manual |
+| `prompt_param` ⏰ | `responses.create(prompt={"prompt_id": pid, ...})`, JSON/TS `prompt: {...}` | build messages in code and pass as `input`; variables become function args | moderate |
+| `http_endpoints` ⏰ | `GET /v1/prompts/pmpt_...` | no API successor — read prompt content from your repo | mechanical |
+
+⏰ = own deadline (**2026-11-30**), rendered as a separate countdown line when
+such findings exist.
 | `foundry_create_agent` | `project.agents.create_agent(...)` (py) / `agents.createAgent(...)` (js) | `create_version(agent_name, PromptAgentDefinition(...))` — retires 2027-03-31 | moderate |
 | `foundry_threads` | `project.agents.threads.create(...)` / `agents.createThread(...)` | `openai.conversations.create(...)` via `get_openai_client()` | moderate |
 | `foundry_messages` | `project.agents.messages.create/list(...)` / `createMessage/listMessages` | `openai.conversations.items.*` | moderate |
@@ -82,7 +99,7 @@ src/chat.py
         + client.conversations.items.create(cid, items=[{"type": "message", "role": "user", "content": "hi"}])
   L27   manual     runs              .beta.threads.runs.create
         - run = client.beta.threads.runs.create(thread_id=tid, assistant_id=aid)
-        + res = client.responses.create(conversation=cid, prompt={"id": pid}, input=items)
+        + res = client.responses.create(conversation=cid, input=items) # bundle inlined as model/instructions/tools args
   L29   manual     runs              .beta.threads.runs.retrieve
   L30   manual     run_steps         .beta.threads.runs.steps.
         - steps = client.beta.threads.runs.steps.list(thread_id=tid, run_id=rid)
@@ -222,6 +239,11 @@ retirement, so mixed workloads can't confuse one deadline for the other.
 - [x] **M4** (v0.4): Microsoft second wave — Foundry Agent Service (classic)
   SDK shapes (retire 2027-03-31) and Azure `/openai/threads|assistants` HTTP
   calls (dead 2026-08-26), each finding tagged with its own deadline.
+- [x] **M4.5** (v0.5): third wave — reusable prompt objects (`v1/prompts`,
+  dashboard Prompts) shut down **2026-11-30**; `pmpt_` ids, `prompt={...}`
+  params, `.prompts.*` SDK calls and `/v1/prompts` REST calls detected with
+  their own countdown; Assistants migration guidance rewritten so it no
+  longer steers people into prompt objects (the double-migration trap).
 - **M5 (only on demand)**: PyPI packaging.
 
 ## Development

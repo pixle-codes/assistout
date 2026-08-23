@@ -1,7 +1,9 @@
 import os
 import tempfile
 import unittest
+from datetime import date
 
+from assistout.knowledge import RULES
 from assistout.scanner import is_binary, iter_files, scan_path, scan_text
 
 
@@ -58,6 +60,85 @@ class ScanTextTests(unittest.TestCase):
             "conversation=conv_id)"
         )
         self.assertEqual(scan_text(code), [])
+
+
+class PromptObjectRuleTests(unittest.TestCase):
+    """v1/prompts (reusable prompt objects) shut down 2026-11-30."""
+
+    def test_pmpt_literal_flagged_in_any_file(self):
+        hits = scan_text('PROMPT_ID = "pmpt_abc1234567"')
+        self.assertEqual([h["category"] for h in hits], ["prompt_object_refs"])
+        self.assertEqual(hits[0]["deadline"], "2026-11-30")
+
+    def test_prompt_id_refs_flagged(self):
+        for line in (
+            'prompt_id = os.environ["OPENAI_PROMPT_ID"]',
+            'promptId: "pmpt_1",',
+            '{"prompt_id": pid}',
+        ):
+            cats = {h["category"] for h in scan_text(line)}
+            self.assertIn("prompt_object_refs", cats, line)
+
+    def test_sdk_prompts_calls_flagged(self):
+        for lang, call in (
+            ("py", 'client.prompts.retrieve("pmpt_123")'),
+            ("py", "client.prompts.list()"),
+            ("js", "await client.prompts.delete(pid)"),
+        ):
+            cats = {h["category"] for h in scan_text(call)}
+            self.assertIn("prompt_sdk_calls", cats, call)
+
+    def test_prompt_param_container_flagged_per_language(self):
+        for line in (
+            'client.responses.create(prompt={"prompt_id": pid})',
+            'await client.responses.create({ prompt: { id: pid } });',
+            'fetch(url, {body: JSON.stringify({"prompt": {...}})})',
+        ):
+            cats = {h["category"] for h in scan_text(line)}
+            self.assertIn("prompt_param", cats, line)
+
+    def test_v1_prompts_url_flagged_with_prompts_deadline(self):
+        hits = scan_text("GET https://api.openai.com/v1/prompts/pmpt_123")
+        cats = {h["category"] for h in hits}
+        self.assertEqual(cats, {"http_endpoints", "prompt_object_refs"})
+        deadlines = {h["deadline"] for h in hits}
+        self.assertEqual(deadlines, {"2026-11-30"})
+
+    def test_plain_prompt_word_not_flagged(self):
+        for line in (
+            "system_prompt = 'you are helpful'",
+            'input="tell me a prompt joke"',
+            "def run(prompt):",
+            "improve_prompt(task)",
+        ):
+            self.assertEqual(scan_text(line), [], line)
+
+    def test_realistic_migration_snippet_categories(self):
+        code = (
+            'pid = os.environ["OPENAI_PROMPT_ID"]\n'
+            "res = client.responses.create(prompt={\"prompt_id\": pid, "
+            '"version": "1"})\n'
+        )
+        cats = [h["category"] for h in scan_text(code)]
+        self.assertEqual(cats[0], "prompt_object_refs")
+        self.assertIn("prompt_param", cats)
+        self.assertIn("prompt_object_refs", cats)
+
+    def test_all_prompt_rules_carry_nov30_deadline(self):
+        for rule in RULES:
+            if rule.category.startswith("prompt_"):
+                self.assertEqual(rule.deadline, date(2026, 11, 30), rule.category)
+
+    def test_assistant_guidance_no_longer_points_at_pmpt(self):
+        """s16: migrating into dashboard Prompts means a second migration."""
+        for rule in RULES:
+            if not rule.category.startswith("assistant"):
+                continue
+            blob = " ".join(
+                [rule.replacement, rule.note, rule.hint_before, rule.hint_after]
+            )
+            self.assertNotIn("pmpt_", blob, rule.category)
+            self.assertNotIn("prompt={'id'", blob, rule.category)
 
 
 class IsBinaryTests(unittest.TestCase):
