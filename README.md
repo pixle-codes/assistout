@@ -8,11 +8,12 @@ period ([official notice](https://developers.openai.com/api/docs/deprecations)).
 OpenAI ships a prose migration guide but states plainly:
 *"We will not provide an automated tool for migrating Threads to Conversations."*
 
-`assistout` is that missing tool's first half: a deterministic, offline,
-zero-dependency scanner that inventories your Assistants API usage, maps each
-finding to its Responses/Conversations replacement, and triages each one by
-migration effort (`mechanical` / `moderate` / `manual`) so you know what's a
-find-and-replace versus an event-loop redesign.
+`assistout` is the missing tool: a deterministic, offline, zero-dependency
+scanner that inventories your Assistants API usage, maps each finding to its
+Responses/Conversations replacement, and triages each one by migration effort
+(`mechanical` / `moderate` / `manual`) so you know what's a find-and-replace
+versus an event-loop redesign — plus `--emit-backfill`, which generates the
+Threads→Conversations history-migration script OpenAI declined to provide.
 
 ## What it detects
 
@@ -26,10 +27,13 @@ find-and-replace versus an event-loop redesign.
 | `assistant_objects` | `client.beta.assistants.create(...)` | dashboard Prompts, `prompt={"id": ...}` | manual |
 | `vector_stores` | `client.beta.vector_stores.files.upload(...)` | survives — re-attach via `tools=[{"type": "file_search", ...}]` | moderate |
 | `assistant_refs` | `"asst_8fVY..."`, `OPENAI_ASSISTANT_ID` | swap for prompt id after recreating bundle | moderate |
+| `js_run_helpers` | `.runs.createAndPoll(...)`, `.runs.createAndStream(...)` | awaited `responses.create` / Responses stream events | manual |
+| `assistant_id_arg` | `assistant_id="asst_..."` at any call site | `prompt={"id": ...}` on `responses.create` | moderate |
 | `http_endpoints` | `fetch("https://api.openai.com/v1/threads/...")` | `/v1/conversations` + `/v1/responses` | manual |
 
-SDK method calls are detected in Python sources; raw REST endpoint strings and
-hardcoded ids are detected in **every** text file (JS, TS, Go, YAML, .env, ...).
+SDK method calls are detected in Python **and** JavaScript/TypeScript sources
+(`.js .jsx .ts .tsx .mjs .cjs`); raw REST endpoint strings and hardcoded ids are
+detected in **every** text file (Go, YAML, .env, ...).
 
 ## Install
 
@@ -48,7 +52,7 @@ Or copy the `assistout/` package directory into your repo/tooling.
 ```console
 $ python3 -m assistout ~/code/my-agent-app
 
-assistout v0.1.0 — Assistants API migration scanner
+assistout v0.2.0 — Assistants API migration scanner
 OpenAI Assistants API shuts down 2026-08-26 — 3 days left
 
 src/chat.py
@@ -85,6 +89,41 @@ $ python3 -m assistout src --json | jq '.totals'
 
 Gate a release branch: `python3 -m assistout . || echo "still has Assistants usage"`.
 
+### The backfill generator — save your thread history before Aug 26
+
+OpenAI ships **no** Threads→Conversations migration tool. `--emit-backfill`
+writes you one: a standalone script implementing the
+[official recipe](https://developers.openai.com/api/docs/assistants/migration)
+(`threads.messages.list` → `conversations.create`) plus the production
+properties the docs leave to you:
+
+```console
+$ python3 -m assistout --emit-backfill backfill_conversations.py
+wrote backfill_conversations.py (179 lines). Run it with your thread IDs
+BEFORE 2026-08-26; see --help inside the script.
+
+$ python3 backfill_conversations.py thr_abc123 thr_def456 --metadata team=core
+ok thr_abc123 -> conv_9xK... (42 items)
+ok thr_def456 -> conv_7yL... (8 items)
+
+$ cat backfill_map.jsonl     # idempotency journal — re-runs skip mapped threads
+thr_abc123	conv_9xK...
+thr_def456	conv_7yL...
+```
+
+What it adds beyond the docs' snippet:
+- **Idempotency journal**: each success appends `thread_id→conversation_id`;
+  crash mid-batch and re-run without creating duplicates.
+- **Fail-visible content policy**: unsupported content parts (`image_file`,
+  code-interpreter outputs, ...) abort the thread by default; `--allow-lossy`
+  drops them *explicitly* and logs exactly what was lost. Nothing disappears
+  silently.
+- **Dry-run mode**, custom `--metadata`, ids from argv or `$ASSISTOUT_THREAD_IDS`.
+- **Deadline-aware**: warns if run at/after 2026-08-26.
+
+Requires only the `openai` SDK and stdlib. Run it once per environment before
+the shutdown; after it, thread history is unreadable everywhere.
+
 ## How it works
 
 Rules are ordered by specificity and matches claim their character span, so
@@ -109,8 +148,8 @@ scans are exactly when stragglers need this most.
 
 ## Roadmap
 
-- **M2**: `--emit-backfill` generating the official threads→conversations export
-  script parameterized per project; JS/TS SDK-call detection.
+- [x] **M2** (v0.2): `--emit-backfill` generating the official
+  threads→conversations backfill script; JS/TS SDK-call detection.
 - **M3**: per-finding before/after rewrite hints, SARIF output for GitHub code
   scanning annotations.
 
@@ -120,9 +159,12 @@ scans are exactly when stragglers need this most.
 python3 -m unittest discover -s tests -v
 ```
 
-Test coverage pins the rule-priority contract (run-steps beats runs, streaming
-beats runs), the Python-vs-any-file rule split, binary/large-file skips, the
-JSON schema, countdown wording around the shutdown date, and all exit codes.
+Test coverage pins the rule-priority contract (run-steps and JS helpers beat
+generic runs, streaming beats runs), the per-language rule split (py vs js vs
+any file), binary/large-file skips, the JSON schema, countdown wording around
+the shutdown date, all exit codes — and the emitted backfill script's real
+behavior, executed offline against a fake SDK (paging, journal idempotency,
+dry-run, lossy-content policy).
 
 ## License
 
