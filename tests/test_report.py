@@ -2,11 +2,26 @@ import json
 import unittest
 from datetime import date
 
-from assistout.report import countdown_line, days_left, render_json, totals
+from assistout.report import (
+    countdown_line,
+    days_left,
+    render_human,
+    render_json,
+    totals,
+)
 from assistout.scanner import Finding
 
 
-def mk(line=1, col=1, category="runs", effort="manual", path="a.py", match="m"):
+def mk(
+    line=1,
+    col=1,
+    category="runs",
+    effort="manual",
+    path="a.py",
+    match="m",
+    hint_before="",
+    hint_after="",
+):
     return Finding(
         path=path,
         line=line,
@@ -16,6 +31,8 @@ def mk(line=1, col=1, category="runs", effort="manual", path="a.py", match="m"):
         match=match,
         replacement="r",
         note="n",
+        hint_before=hint_before,
+        hint_after=hint_after,
     )
 
 
@@ -83,6 +100,48 @@ class RenderJsonTests(unittest.TestCase):
         payload = render_json("root", [], 0, today=date(2026, 8, 23))
         self.assertEqual(payload["files"], [])
         self.assertEqual(payload["totals"]["by_category"], {})
+
+    def test_hints_included(self):
+        payload = render_json(
+            "root",
+            [mk(hint_before="b", hint_after="a")],
+            1,
+            today=date(2026, 8, 23),
+        )
+        finding = payload["files"][0]["findings"][0]
+        self.assertEqual(finding["hint_before"], "b")
+        self.assertEqual(finding["hint_after"], "a")
+
+
+class RenderHumanHintTests(unittest.TestCase):
+    def test_hint_lines_shown(self):
+        out = render_human([mk(hint_before="old()", hint_after="new()")], 1)
+        self.assertIn("- old()", out)
+        self.assertIn("+ new()", out)
+
+    def test_no_hint_lines_when_empty(self):
+        out = render_human([mk()], 1)
+        self.assertNotIn("        - ", out)
+        self.assertNotIn("        + ", out)
+
+    def test_identical_consecutive_hints_deduped(self):
+        findings = [
+            mk(line=1, hint_before="old", hint_after="new"),
+            mk(line=2, hint_before="old", hint_after="new"),
+            mk(line=3, category="thread_crud", hint_before="o2", hint_after="n2"),
+            mk(line=4, hint_before="old", hint_after="new"),
+        ]
+        out = render_human(findings, 1)
+        self.assertEqual(out.count("- old"), 2)
+        self.assertEqual(out.count("- o2"), 1)
+
+    def test_new_file_resets_dedupe(self):
+        findings = [
+            mk(path="a.py", line=1, hint_before="old", hint_after="new"),
+            mk(path="b.py", line=1, hint_before="old", hint_after="new"),
+        ]
+        out = render_human(findings, 1)
+        self.assertEqual(out.count("- old"), 2)
 
 
 if __name__ == "__main__":

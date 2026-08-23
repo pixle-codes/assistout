@@ -84,6 +84,47 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("conversations.create(items=items", out)
 
+    def test_sarif_writes_file_and_keeps_human_report(self):
+        out_path = os.path.join(self.root, "findings.sarif")
+        code, out, _ = self.run_cli(["--sarif", out_path, self.root])
+        self.assertEqual(code, 1)
+        self.assertIn("thread_crud", out)
+        with open(out_path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        self.assertEqual(doc["version"], "2.1.0")
+        results = doc["runs"][0]["results"]
+        self.assertEqual(len(results), 1)
+        self.assertTrue(results[0]["ruleId"].startswith("assistout/"))
+        uri = results[0]["locations"][0]["physicalLocation"]["artifactLocation"][
+            "uri"
+        ]
+        self.assertFalse(os.path.isabs(uri))
+
+    def test_sarif_stdout_is_pure_sarif(self):
+        code, out, _ = self.run_cli(["--sarif", "-", self.root])
+        self.assertEqual(code, 1)
+        doc = json.loads(out)
+        self.assertEqual(doc["runs"][0]["results"][0]["ruleId"], "assistout/thread_crud")
+        self.assertNotIn("assistout v", out.split('"$schema"')[0])
+
+    def test_sarif_clean_tree_gives_empty_results_exit_0(self):
+        os.remove(os.path.join(self.root, "app.py"))
+        with open(os.path.join(self.root, "ok.py"), "w") as fh:
+            fh.write("print('hi')\n")
+        code, out, _ = self.run_cli(
+            ["--sarif", os.path.join(self.root, "o.sarif"), self.root]
+        )
+        self.assertEqual(code, 0)
+        with open(os.path.join(self.root, "o.sarif"), encoding="utf-8") as fh:
+            doc = json.load(fh)
+        self.assertEqual(doc["runs"][0]["results"], [])
+
+    def test_sarif_unwritable_target_exits_2(self):
+        bad = os.path.join(self.root, "no-such-dir", "out.sarif")
+        code, _, err = self.run_cli(["--sarif", bad, self.root])
+        self.assertEqual(code, 2)
+        self.assertIn("cannot write", err)
+
 
 if __name__ == "__main__":
     unittest.main()

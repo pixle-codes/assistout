@@ -63,6 +63,8 @@ def render_json(root, findings, files_scanned, today=None):
                 "match": f.match,
                 "replacement": f.replacement,
                 "note": f.note,
+                "hint_before": f.hint_before,
+                "hint_after": f.hint_after,
             }
         )
     t = totals(findings)
@@ -93,13 +95,20 @@ def render_human(findings, files_scanned, today=None):
         )
         return "\n".join(lines)
     current = None
+    prev_hint = None
     for f in findings:
         if f.path != current:
             current = f.path
+            prev_hint = None
             lines.append(f"{current}")
         lines.append(
             f"  L{f.line:<4} {f.effort:<10} {f.category:<17} {f.match}"
         )
+        hint = (f.hint_before, f.hint_after) if f.hint_before or f.hint_after else None
+        if hint and hint != prev_hint:
+            lines.append(f"        - {hint[0]}")
+            lines.append(f"        + {hint[1]}")
+        prev_hint = hint
     t = totals(findings)
     lines.append("")
     lines.append(

@@ -8,6 +8,7 @@ import sys
 from . import __version__
 from .backfill import generate_script
 from .report import render_human, render_json
+from .sarif import render_sarif
 from .scanner import scan_path
 
 
@@ -24,6 +25,14 @@ def build_parser():
         "path", nargs="?", help="file or directory to scan", default=None
     )
     p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.add_argument(
+        "--sarif",
+        metavar="OUT",
+        help=(
+            "write findings as SARIF 2.1.0 to OUT ('-' for stdout) for "
+            "GitHub code-scanning annotations; exit codes unchanged"
+        ),
+    )
     p.add_argument(
         "--emit-backfill",
         metavar="OUT",
@@ -69,6 +78,20 @@ def emit_backfill(args) -> int:
     return 0
 
 
+def write_sarif(out: str, findings) -> int:
+    payload = json.dumps(render_sarif(findings), indent=2)
+    if out == "-":
+        print(payload)
+        return 0
+    try:
+        with open(out, "w", encoding="utf-8") as fh:
+            fh.write(payload + "\n")
+    except OSError as exc:
+        print(f"assistout: cannot write {out}: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     if args.emit_backfill:
@@ -83,7 +106,14 @@ def main(argv=None) -> int:
     if not files_scanned:
         print(f"assistout: no readable files under {args.path}", file=sys.stderr)
         return 2
-    if args.json:
+    sarif_to_stdout = args.sarif == "-"
+    if args.sarif and not sarif_to_stdout:
+        rc = write_sarif(args.sarif, findings)
+        if rc:
+            return rc
+    if sarif_to_stdout:
+        write_sarif("-", findings)
+    elif args.json:
         print(json.dumps(render_json(args.path, findings, files_scanned), indent=2))
     else:
         print(render_human(findings, files_scanned))

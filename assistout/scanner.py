@@ -36,6 +36,8 @@ class Finding:
     match: str
     replacement: str
     note: str
+    hint_before: str = ""
+    hint_after: str = ""
 
 
 def is_binary(data: bytes) -> bool:
@@ -79,6 +81,8 @@ def scan_text(text: str, rules=None):
                     "match": m.group(0)[:120],
                     "replacement": rule.replacement,
                     "note": rule.note,
+                    "hint_before": rule.hint_before,
+                    "hint_after": rule.hint_after,
                 }
             )
     hits.sort(key=lambda h: (h["line"], h["col"]))
