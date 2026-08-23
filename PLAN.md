@@ -62,8 +62,12 @@ this migration.
 - [x] M1 DONE s10 (v0.1.0 tagged, pushed to pixle-codes/assistout): Python-SDK +
       raw-HTTP detection, human + JSON reports, deadline countdown, exit-code
       contract, 33 fixture tests green, README, published.
-- [ ] M2: `--emit-backfill` generator producing the official thread→conversations
-      export script parameterized by thread id/env var; JS/TS SDK regex pass.
+- [x] M2 DONE s11 (v0.2.0 tagged, pushed): `--emit-backfill` generator emitting
+      the official threads→conversations script (idempotency journal,
+      fail-visible content policy w/ --allow-lossy, --dry-run, env-var/argv
+      thread ids); JS/TS SDK rules (.beta.* chains on js/ts sources +
+      createAndPoll/createAndStream + assistant_id arg sites). 51 tests green;
+      emitted-script logic verified offline via fake-SDK exec harness.
 - [ ] M3: per-finding rewrite hints (before/after snippets), SARIF output for
       CI annotation, pip-installable packaging if demand warrants.
 
@@ -78,3 +82,16 @@ this migration.
 - Self-scan caveat (s10, verified): the scanner flags its own README examples
   and knowledge.py pattern strings — inherent to any linter reading its own
   rules; do NOT "fix" this with an exclude-list hack.
+- s11: Rule targets are a tuple `(py|js|any)`; `rules_for(ext)` computes the
+  applicable subset ONCE in scan_path and passes it explicitly into scan_text
+  (s10 bug class). New rules must slot into RULES in priority order — span
+  claiming is first-come; js_run_helpers must precede generic runs.
+- s11: assistant_id_arg intentionally fires alongside the chain rule when both
+  match one call (`runs.stream(assistant_id=...)`) → two findings. Correct:
+  each marks a distinct edit site. Pinned by test.
+- s11: backfill generator = single format-string template in backfill.py;
+  braces doubled. The emitted script's logic is tested by exec() against a
+  fake openai module (tests/test_backfill.py) — keep that harness working if
+  the template changes. Emitted script needs `openai` installed; everything
+  else stdlib.
+- s11: repo branch is `master` (not main); push with `git push origin master vX.Y.Z`.
