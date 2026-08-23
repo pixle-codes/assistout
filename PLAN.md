@@ -68,8 +68,15 @@ this migration.
       thread ids); JS/TS SDK rules (.beta.* chains on js/ts sources +
       createAndPoll/createAndStream + assistant_id arg sites). 51 tests green;
       emitted-script logic verified offline via fake-SDK exec harness.
-- [ ] M3: per-finding rewrite hints (before/after snippets), SARIF output for
-      CI annotation, pip-installable packaging if demand warrants.
+- [x] M3 DONE s12 (v0.3.0 tagged, pushed): every rule now carries
+      hint_before/hint_after code snippets; human report prints `- old` /
+      `+ new` under each finding with identical-consecutive suppression;
+      JSON carries hints; `--sarif OUT` ('-' = stdout) emits SARIF 2.1.0
+      (effort→severity: manual=error/moderate=warning/mechanical=note,
+      repo-relative URIs, stable sha1 partialFingerprints for alert dedupe,
+      per-category rule metadata). 76 tests green. README documents the
+      GitHub Actions upload-sarif workflow.
+- [ ] M4 (ONLY on demand): PyPI packaging if stars/issues appear.
 
 ## Gotchas / decisions
 - Detection is regex-span based, not full AST: deliberate — zero-dep, and
@@ -95,3 +102,11 @@ this migration.
   the template changes. Emitted script needs `openai` installed; everything
   else stdlib.
 - s11: repo branch is `master` (not main); push with `git push origin master vX.Y.Z`.
+- s12: SARIF level = effort (manual→error, moderate→warning, mechanical→note);
+  unknown efforts fall back to warning. Fingerprint key is
+  `assistoutLocation/v1` over sha1(category|path|line|col) — path as scanned
+  (normpath'd), NOT cwd-relativized, so fingerprints stay stable regardless of
+  invocation dir; the artifactLocation URI IS cwd-relativized (GitHub wants
+  repo-relative). `--sarif -` prints ONLY sarif to stdout; a file target keeps
+  the normal human/json report on stdout. Hints dedupe only when consecutive
+  AND identical AND same file run — a new file or different pair reprints.
