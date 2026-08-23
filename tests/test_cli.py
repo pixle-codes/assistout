@@ -59,6 +59,31 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("L1", out)
 
+    def test_emit_backfill_writes_file(self):
+        out_path = os.path.join(self.root, "backfill_conversations.py")
+        code, out, _ = self.run_cli(["--emit-backfill", out_path])
+        self.assertEqual(code, 0)
+        self.assertIn("wrote", out)
+        with open(out_path, encoding="utf-8") as fh:
+            src = fh.read()
+        compile(src, out_path, "exec")
+        self.assertIn("threads.messages.list(", src)
+
+    def test_emit_backfill_refuses_overwrite_without_force(self):
+        out_path = os.path.join(self.root, "bf.py")
+        code, _, _ = self.run_cli(["--emit-backfill", out_path])
+        self.assertEqual(code, 0)
+        code, _, err = self.run_cli(["--emit-backfill", out_path])
+        self.assertEqual(code, 2)
+        self.assertIn("--force", err)
+        code, _, _ = self.run_cli(["--emit-backfill", out_path, "--force"])
+        self.assertEqual(code, 0)
+
+    def test_emit_backfill_stdout(self):
+        code, out, _ = self.run_cli(["--emit-backfill", "-"])
+        self.assertEqual(code, 0)
+        self.assertIn("conversations.create(items=items", out)
+
 
 if __name__ == "__main__":
     unittest.main()
