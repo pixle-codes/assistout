@@ -6,6 +6,10 @@ from datetime import date
 
 SHUTDOWN_DATE = date(2026, 8, 26)
 
+# Microsoft Foundry Agent Service (classic) - built ON the Assistants API -
+# retires separately, months after the Aug-26 Assistants cutoff.
+AGENTS_CLASSIC_DATE = date(2027, 3, 31)
+
 PYTHON_TARGETS = {".py"}
 JS_TARGETS = {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}
 PY = "py"
@@ -22,11 +26,14 @@ class Rule:
     note: str
     hint_before: str = ""
     hint_after: str = ""
+    deadline: object = None
     targets: tuple = (PY,)
 
     def __post_init__(self):
         self.compiled_pattern = re.compile(self.pattern)
         self.targets = tuple(self.targets)
+        if self.deadline is None:
+            self.deadline = SHUTDOWN_DATE
 
     def compiled(self):
         return self.compiled_pattern
@@ -248,6 +255,212 @@ RULES = [
         ),
         hint_before="POST https://api.openai.com/v1/threads",
         hint_after="POST https://api.openai.com/v1/conversations",
+        targets=(ANY_FILE,),
+    ),
+    # --- Microsoft Foundry Agent Service (classic) + Azure Assistants surface.
+    # Retire dates: azure /openai/assistants* HTTP = 2026-08-26 (same as
+    # OpenAI); classic agents SDK shapes = 2027-03-31. Method shapes are the
+    # unambiguous markers - do NOT flag bare azure.ai.projects imports (the
+    # NEW SDK uses them too) and do NOT flag .agents.create_version /
+    # get_openai_client() / conversations / responses calls (new world).
+    Rule(
+        category="foundry_run_process",
+        effort="manual",
+        pattern=r"\.agents\s*\.\s*runs\s*\.\s*create_and_process\b",
+        deadline=AGENTS_CLASSIC_DATE,
+        replacement=(
+            "openai.responses.create(conversation=..., extra_body="
+            '{"agent_reference": {...}})'
+        ),
+        note=(
+            "Foundry Agent Service (classic, retires 2027-03-31): the "
+            "create_and_process polling loop becomes one responses.create on "
+            "the OpenAI client from project.get_openai_client(), passing "
+            "agent_reference in extra_body."
+        ),
+        hint_before=(
+            "run = project_client.agents.runs.create_and_process("
+            "thread_id=tid, agent_id=aid)"
+        ),
+        hint_after=(
+            'res = openai.responses.create(conversation=cid, input=items, '
+            'extra_body={"agent_reference": {"name": "my-agent", '
+            '"type": "agent_reference"}})'
+        ),
+        targets=(PY,),
+    ),
+    Rule(
+        category="foundry_runs",
+        effort="manual",
+        pattern=r"\.agents\s*\.\s*runs\s*\.\s*\w+",
+        deadline=AGENTS_CLASSIC_DATE,
+        replacement="openai.responses.create(conversation=..., agent_reference)",
+        note=(
+            "Foundry Agent Service (classic, retires 2027-03-31): runs become "
+            "Responses. Get openai = project.get_openai_client() and call "
+            "responses.create with conversation + agent_reference; tool-call "
+            "loops are explicit now."
+        ),
+        hint_before=(
+            "run = project_client.agents.runs.create(thread_id=tid, agent_id=aid)"
+        ),
+        hint_after=(
+            'res = openai.responses.create(conversation=cid, input=items, '
+            'extra_body={"agent_reference": {"name": name, '
+            '"type": "agent_reference"}})'
+        ),
+        targets=(PY,),
+    ),
+    Rule(
+        category="foundry_runs",
+        effort="manual",
+        pattern=r"\.\s*agents\s*\.\s*(?:createRun|getRun|listRuns|cancelRun)\b",
+        deadline=AGENTS_CLASSIC_DATE,
+        replacement="openai.responses.create({conversation, input}, {body: {agent_reference}})",
+        note=(
+            "Foundry Agent Service (classic, retires 2027-03-31): runs become "
+            "Responses via project.getOpenAIClient(); delete polling loops."
+        ),
+        hint_before="let run = await client.agents.createRun(threadId, agentId);",
+        hint_after=(
+            'const res = await openai.responses.create({conversation: cid, input},'
+            " { body: { agent_reference: { name, type: \"agent_reference\" } } });"
+        ),
+        targets=(JS,),
+    ),
+    Rule(
+        category="foundry_threads",
+        effort="moderate",
+        pattern=r"\.agents\s*\.\s*threads\s*\.\s*\w+",
+        deadline=AGENTS_CLASSIC_DATE,
+        replacement="openai.conversations.* (via project.get_openai_client())",
+        note=(
+            "Foundry Agent Service (classic, retires 2027-03-31): threads "
+            "become conversations on the OpenAI client. Old thread data is "
+            "NOT migrated by Microsoft's tool - start new conversations and "
+            "read history through the old API before retirement."
+        ),
+        hint_before=(
+            'thread = client.agents.threads.create(messages=[{"role": "user", '
+            '"content": "hi"}])'
+        ),
+        hint_after=(
+            'conv = openai.conversations.create(items=[{"type": "message", '
+            '"role": "user", "content": "hi"}])'
+        ),
+        targets=(PY,),
+    ),
+    Rule(
+        category="foundry_threads",
+        effort="moderate",
+        pattern=r"\.\s*agents\s*\.\s*createThread\b",
+        deadline=AGENTS_CLASSIC_DATE,
+        replacement="openai.conversations.create({...}) via getOpenAIClient()",
+        note=(
+            "Foundry Agent Service (classic, retires 2027-03-31): threads "
+            "become conversations; historical thread data stays readable only "
+            "through the old API until retirement."
+        ),
+        hint_before="const thread = await client.agents.createThread({messages});",
+        hint_after='const conv = await openai.conversations.create({items});',
+        targets=(JS,),
+    ),
+    Rule(
+        category="foundry_messages",
+        effort="moderate",
+        pattern=r"\.agents\s*\.\s*messages\s*\.\s*\w+",
+        deadline=AGENTS_CLASSIC_DATE,
+        replacement="openai.conversations.items.create(...) (via get_openai_client())",
+        note=(
+            "Foundry Agent Service (classic, retires 2027-03-31): thread "
+            "messages become conversation items."
+        ),
+        hint_before=(
+            "msg = client.agents.messages.create(thread_id=tid, role=\"user\", "
+            'content="hi")'
+        ),
+        hint_after=(
+            'openai.conversations.items.create(conversation_id=cid, items=['
+            '{"type": "message", "role": "user", "content": "hi"}])'
+        ),
+        targets=(PY,),
+    ),
+    Rule(
+        category="foundry_messages",
+        effort="moderate",
+        pattern=r"\.\s*agents\s*\.\s*(?:createMessage|listMessages|updateMessage)\b",
+        deadline=AGENTS_CLASSIC_DATE,
+        replacement="openai.conversations.items.* via getOpenAIClient()",
+        note=(
+            "Foundry Agent Service (classic, retires 2027-03-31): thread "
+            "messages become conversation items."
+        ),
+        hint_before="await client.agents.createMessage(thread.id, {role, content});",
+        hint_after=(
+            "await openai.conversations.items.create(conv.id, {items});"
+        ),
+        targets=(JS,),
+    ),
+    Rule(
+        category="foundry_create_agent",
+        effort="moderate",
+        pattern=r"\.agents\s*\.\s*create_agent\b",
+        deadline=AGENTS_CLASSIC_DATE,
+        replacement="project.agents.create_version(agent_name=..., definition=PromptAgentDefinition(...))",
+        note=(
+            "Foundry Agent Service (classic, retires 2027-03-31): "
+            "create_agent was removed in SDK v2; agents are versioned now - "
+            "define once with PromptAgentDefinition and reference by "
+            "agent_reference at response time."
+        ),
+        hint_before=(
+            'agent = client.agents.create_agent(model="gpt-4.1", name="a", '
+            "instructions=inst, tools=defs)"
+        ),
+        hint_after=(
+            "agent = project.agents.create_version(agent_name=\"a\", "
+            "definition=PromptAgentDefinition(model=\"gpt-4.1\", "
+            "instructions=inst, tools=tools))"
+        ),
+        targets=(PY,),
+    ),
+    Rule(
+        category="foundry_create_agent",
+        effort="moderate",
+        pattern=r"\.\s*agents\s*\.\s*createAgent\b",
+        deadline=AGENTS_CLASSIC_DATE,
+        replacement='project.agents.createVersion(name, {kind: "prompt", model, instructions, tools})',
+        note=(
+            "Foundry Agent Service (classic, retires 2027-03-31): createAgent "
+            "is gone; agents are versioned prompt definitions referenced by "
+            "name at response time."
+        ),
+        hint_before='const agent = await client.agents.createAgent("gpt-4.1", {...});',
+        hint_after=(
+            'const agent = await project.agents.createVersion("my-agent", '
+            '{ kind: "prompt", model: "gpt-4.1", instructions, tools });'
+        ),
+        targets=(JS,),
+    ),
+    Rule(
+        category="azure_http_endpoints",
+        effort="manual",
+        pattern=r"/openai/threads\b|/openai/assistants\b|/openai/vector_stores\b",
+        replacement="/openai/v1/conversations + /openai/v1/responses",
+        note=(
+            "Azure OpenAI resources serve Assistants at /openai/threads*, "
+            "/openai/assistants*, /openai/vector_stores* - these stop working "
+            "on 2026-08-26 too (same cutoff as OpenAI). Port to the unified "
+            "/openai/v1/ surface: conversations for state, responses for "
+            "execution."
+        ),
+        hint_before=(
+            "POST https://myres.openai.azure.com/openai/threads?api-version="
+            "2024-02-15-preview"
+        ),
+        hint_after=(
+            "POST https://myres.openai.azure.com/openai/v1/conversations"
+        ),
         targets=(ANY_FILE,),
     ),
 ]

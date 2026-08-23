@@ -17,6 +17,13 @@ emits SARIF for pull-request annotations, and offers `--emit-backfill`, which
 generates the Threads→Conversations history-migration script OpenAI declined
 to provide.
 
+It also covers the **Microsoft second wave**: Azure OpenAI resources serve the
+same Assistants surface at `/openai/threads*` / `/openai/assistants*` and it
+dies the same day (2026-08-26), while code on the **Foundry Agent Service
+(classic)** SDK (`project.agents.create_agent / threads / messages / runs`,
+retiring **2027-03-31**) gets its own findings, deadline line, and migration
+map to `create_version(PromptAgentDefinition)` + conversations/responses.
+
 ## What it detects
 
 | Category | Example | Replacement | Effort |
@@ -32,10 +39,18 @@ to provide.
 | `js_run_helpers` | `.runs.createAndPoll(...)`, `.runs.createAndStream(...)` | awaited `responses.create` / Responses stream events | manual |
 | `assistant_id_arg` | `assistant_id="asst_..."` at any call site | `prompt={"id": ...}` on `responses.create` | moderate |
 | `http_endpoints` | `fetch("https://api.openai.com/v1/threads/...")` | `/v1/conversations` + `/v1/responses` | manual |
+| `foundry_create_agent` | `project.agents.create_agent(...)` (py) / `agents.createAgent(...)` (js) | `create_version(agent_name, PromptAgentDefinition(...))` — retires 2027-03-31 | moderate |
+| `foundry_threads` | `project.agents.threads.create(...)` / `agents.createThread(...)` | `openai.conversations.create(...)` via `get_openai_client()` | moderate |
+| `foundry_messages` | `project.agents.messages.create/list(...)` / `createMessage/listMessages` | `openai.conversations.items.*` | moderate |
+| `foundry_runs` | `project.agents.runs.create/get(...)` / `createRun/getRun` | `openai.responses.create(conversation, agent_reference)` | manual |
+| `foundry_run_process` | `project.agents.runs.create_and_process(...)` | single `responses.create` + `extra_body={"agent_reference": ...}`; polling loop deleted | manual |
+| `azure_http_endpoints` | `POST https://myres.openai.azure.com/openai/threads?api-version=...` | `/openai/v1/conversations` + `/openai/v1/responses` — dead 2026-08-26 like OpenAI's | manual |
 
 SDK method calls are detected in Python **and** JavaScript/TypeScript sources
 (`.js .jsx .ts .tsx .mjs .cjs`); raw REST endpoint strings and hardcoded ids are
-detected in **every** text file (Go, YAML, .env, ...).
+detected in **every** text file (Go, YAML, Terraform, .env, ...). New-style
+Foundry code (`create_version`, `PromptAgentDefinition`, `get_openai_client()`,
+`responses/conversations`) is deliberately **not** flagged.
 
 ## Install
 
@@ -185,7 +200,9 @@ files (NUL sniff) and files over 2 MB are skipped; VCS/build directories
 
 The countdown line tracks the real shutdown date and flips to
 *"endpoints are gone, migration is mandatory"* after 2026-08-26 — post-deadline
-scans are exactly when stragglers need this most.
+scans are exactly when stragglers need this most. When Foundry classic-agent
+findings are present, a second line counts down to their separate 2027-03-31
+retirement, so mixed workloads can't confuse one deadline for the other.
 
 ## Design stance
 
@@ -202,7 +219,10 @@ scans are exactly when stragglers need this most.
   threads→conversations backfill script; JS/TS SDK-call detection.
 - [x] **M3** (v0.3): per-finding before/after rewrite hints in human + JSON
   reports; `--sarif` output with stable fingerprints for GitHub code scanning.
-- **M4 (only on demand)**: PyPI packaging.
+- [x] **M4** (v0.4): Microsoft second wave — Foundry Agent Service (classic)
+  SDK shapes (retire 2027-03-31) and Azure `/openai/threads|assistants` HTTP
+  calls (dead 2026-08-26), each finding tagged with its own deadline.
+- **M5 (only on demand)**: PyPI packaging.
 
 ## Development
 

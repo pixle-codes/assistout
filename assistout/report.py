@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 
 from . import __version__
-from .knowledge import SHUTDOWN_DATE
+from .knowledge import AGENTS_CLASSIC_DATE, SHUTDOWN_DATE
 
 
 def days_left(today=None) -> int:
@@ -12,25 +12,36 @@ def days_left(today=None) -> int:
     return (SHUTDOWN_DATE - today).days
 
 
-def countdown_line(today=None) -> str:
-    left = days_left(today)
+def deadline_line(label: str, shutdown_date, today=None) -> str:
+    today = today or datetime.now(timezone.utc).date()
+    left = (shutdown_date - today).days
     if left > 1:
         return (
-            f"OpenAI Assistants API shuts down {SHUTDOWN_DATE.isoformat()} "
+            f"{label} shuts down {shutdown_date.isoformat()} "
             f"— {left} days left"
         )
     if left == 1:
         return (
-            f"OpenAI Assistants API shuts down {SHUTDOWN_DATE.isoformat()} "
+            f"{label} shuts down {shutdown_date.isoformat()} "
             f"— final day"
         )
     if left == 0:
         return (
-            f"OpenAI Assistants API shutdown is TODAY ({SHUTDOWN_DATE.isoformat()})"
+            f"{label} shutdown is TODAY ({shutdown_date.isoformat()})"
         )
     return (
-        f"OpenAI Assistants API shut down {SHUTDOWN_DATE.isoformat()} "
+        f"{label} shut down {shutdown_date.isoformat()} "
         f"({-left} days ago) — endpoints are gone, migration is mandatory"
+    )
+
+
+def countdown_line(today=None) -> str:
+    return deadline_line("OpenAI Assistants API", SHUTDOWN_DATE, today)
+
+
+def classic_agents_line(today=None) -> str:
+    return deadline_line(
+        "Foundry Agent Service (classic)", AGENTS_CLASSIC_DATE, today
     )
 
 
@@ -65,6 +76,7 @@ def render_json(root, findings, files_scanned, today=None):
                 "note": f.note,
                 "hint_before": f.hint_before,
                 "hint_after": f.hint_after,
+                "deadline": f.deadline,
             }
         )
     t = totals(findings)
@@ -73,6 +85,7 @@ def render_json(root, findings, files_scanned, today=None):
         "version": __version__,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "shutdown_date": SHUTDOWN_DATE.isoformat(),
+        "agents_classic_retirement": AGENTS_CLASSIC_DATE.isoformat(),
         "days_left": days_left(today),
         "scanned_root": root,
         "files_scanned": files_scanned,
@@ -87,8 +100,10 @@ def render_human(findings, files_scanned, today=None):
     lines = [
         f"assistout v{__version__} — Assistants API migration scanner",
         countdown_line(today),
-        "",
     ]
+    if any(f.deadline == AGENTS_CLASSIC_DATE.isoformat() for f in findings):
+        lines.append(classic_agents_line(today))
+    lines.append("")
     if not findings:
         lines.append(
             f"No Assistants API usage found ({files_scanned} file(s) scanned)."
@@ -124,4 +139,10 @@ def render_human(findings, files_scanned, today=None):
         "Migration map: threads->conversations, runs->responses.create, "
         "assistants->dashboard prompts, run steps->output items."
     )
+    if any(f.deadline == AGENTS_CLASSIC_DATE.isoformat() for f in findings):
+        lines.append(
+            "Foundry classic map: create_agent->create_version("
+            "PromptAgentDefinition), threads->conversations, "
+            "runs->responses.create(agent_reference)."
+        )
     return "\n".join(lines)

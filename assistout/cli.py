@@ -17,7 +17,9 @@ def build_parser():
         prog="assistout",
         description=(
             "Scan a codebase for OpenAI Assistants API usage that breaks at the "
-            "2026-08-26 shutdown; maps each finding to its Responses/Conversations "
+            "2026-08-26 shutdown, plus Microsoft Foundry Agent Service (classic) "
+            "shapes retiring 2027-03-31 and Azure /openai/threads|assistants "
+            "HTTP calls; maps each finding to its Responses/Conversations "
             "replacement."
         ),
     )

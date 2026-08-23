@@ -38,6 +38,7 @@ class Finding:
     note: str
     hint_before: str = ""
     hint_after: str = ""
+    deadline: str = ""
 
 
 def is_binary(data: bytes) -> bool:
@@ -83,6 +84,7 @@ def scan_text(text: str, rules=None):
                     "note": rule.note,
                     "hint_before": rule.hint_before,
                     "hint_after": rule.hint_after,
+                    "deadline": rule.deadline.isoformat(),
                 }
             )
     hits.sort(key=lambda h: (h["line"], h["col"]))

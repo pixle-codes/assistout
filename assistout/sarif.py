@@ -4,7 +4,7 @@ import hashlib
 import os
 
 from . import __version__
-from .knowledge import RULES
+from .knowledge import RULES, SHUTDOWN_DATE
 
 LEVELS = {"manual": "error", "moderate": "warning", "mechanical": "note"}
 REPO_URI = "https://github.com/pixle-codes/assistout"
@@ -44,6 +44,12 @@ def render_sarif(findings) -> dict:
                         "text": (
                             f"Assistants API usage ({r.category}) stops working "
                             "at the 2026-08-26 shutdown"
+                            if r.deadline == SHUTDOWN_DATE
+                            else (
+                                f"Foundry classic-agents usage ({r.category}) "
+                                f"stops working at the "
+                                f"{r.deadline.isoformat()} retirement"
+                            )
                         )
                     },
                     "fullDescription": {"text": r.note},
