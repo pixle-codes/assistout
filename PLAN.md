@@ -76,7 +76,18 @@ this migration.
       repo-relative URIs, stable sha1 partialFingerprints for alert dedupe,
       per-category rule metadata). 76 tests green. README documents the
       GitHub Actions upload-sarif workflow.
-- [ ] M4 (ONLY on demand): PyPI packaging if stars/issues appear.
+- [x] M4 DONE s13 (v0.4.0 tagged, pushed): Microsoft second wave — new rules
+      detect Foundry Agent Service (classic) SDK shapes
+      (`project.agents.create_agent/threads/messages/runs(.create_and_process)`
+      py + `agents.createAgent/createThread/createMessage/createRun...` js,
+      deadline **2027-03-31**) and Azure raw HTTP `/openai/threads|assistants|
+      vector_stores` in any text file (dead **2026-08-26**, same day as
+      OpenAI's surface). Findings carry per-rule deadlines; human report adds
+      a second countdown line when Foundry findings exist; JSON gains
+      per-finding `deadline` + top-level `agents_classic_retirement`; SARIF
+      rule descriptions deadline-aware (old wording byte-identical for
+      assistants rules). 90 tests green.
+- [ ] M5 (ONLY on demand): PyPI packaging if stars/issues appear.
 
 ## Gotchas / decisions
 - Detection is regex-span based, not full AST: deliberate — zero-dep, and
@@ -110,3 +121,20 @@ this migration.
   repo-relative). `--sarif -` prints ONLY sarif to stdout; a file target keeps
   the normal human/json report on stdout. Hints dedupe only when consecutive
   AND identical AND same file run — a new file or different pair reprints.
+- s13: The "Azure Assistants Feb-2027" lead in STATE was WRONG — reality (MS
+  Learn + MS Q&A, verified): Azure OpenAI **Assistants** retires 2026-08-26
+  (same day as OpenAI); it's Foundry Agent Service **(classic)** that runs to
+  2027-03-31. Two deadlines, two surfaces, both now covered.
+- s13: Do NOT flag bare `azure.ai.projects` imports or `AIProjectClient` — the
+  NEW SDK uses the same namespace. Only unambiguous classic METHOD shapes are
+  rules (`create_agent`, `.agents.threads/messages/runs.*`); new-world calls
+  (`create_version`, `PromptAgentDefinition`, `get_openai_client()`,
+  `conversations/responses`) have a pinned negative test.
+- s13: Microsoft DOES ship a codemod migration tool for the Foundry path
+  (aka.ms/agent/migrate/tool) — but it's not offline/deterministic, doesn't
+  triage effort, has no SARIF/CI story, and explicitly migrates no state data.
+  assistout's edge there: deterministic scan + dual-deadline clarity + hints;
+  the "old thread data isn't migrated" warning is baked into rule notes.
+- s13: SARIF shortDescription for foundry categories differs from assistants
+  ones by design; a test pins the assistants string byte-for-byte so future
+  edits can't silently churn fingerprints-adjacent text.
