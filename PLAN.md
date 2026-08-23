@@ -59,8 +59,9 @@ this migration.
   JS-with-endpoints); clock injected for deadline math.
 
 ## Milestones
-- [x] M1 (this session): Python-SDK + raw-HTTP detection, human + JSON reports,
-      deadline countdown, exit-code contract, fixture tests, README, publish v0.1.
+- [x] M1 DONE s10 (v0.1.0 tagged, pushed to pixle-codes/assistout): Python-SDK +
+      raw-HTTP detection, human + JSON reports, deadline countdown, exit-code
+      contract, 33 fixture tests green, README, published.
 - [ ] M2: `--emit-backfill` generator producing the official thread→conversations
       export script parameterized by thread id/env var; JS/TS SDK regex pass.
 - [ ] M3: per-finding rewrite hints (before/after snippets), SARIF output for
@@ -74,3 +75,6 @@ this migration.
 - Reusable Prompts are ALSO on a deprecation timeline (2026-06-03 entry) — noted
   in knowledge base so we don't recommend stepping into the next sunset.
 - Exit codes pinned by test: 0 clean, 1 findings, 2 bad path.
+- Self-scan caveat (s10, verified): the scanner flags its own README examples
+  and knowledge.py pattern strings — inherent to any linter reading its own
+  rules; do NOT "fix" this with an exclude-list hack.
