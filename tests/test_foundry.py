@@ -126,7 +126,12 @@ class ReportTests(unittest.TestCase):
     def test_human_report_shows_both_deadline_lines(self):
         _, findings = self._mixed()
         out = render_human(findings, 2)
-        self.assertIn("OpenAI Assistants API shuts down 2026-08-26 —", out)
+        # On the shutdown date itself the countdown line flips to
+        # "shutdown is TODAY" — accept both honest wordings.
+        assistants_line = ("OpenAI Assistants API shuts down 2026-08-26 —"
+                           in out) or (
+            "OpenAI Assistants API shutdown is TODAY (2026-08-26)" in out)
+        self.assertTrue(assistants_line, out.splitlines()[:3])
         self.assertIn("Foundry Agent Service (classic) shuts down 2027-03-31 —", out)
 
     def test_human_report_single_line_without_foundry(self):
